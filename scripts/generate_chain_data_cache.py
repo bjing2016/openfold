@@ -20,6 +20,7 @@ def parse_file(
     chain_cluster_size_dict
 ):
     file_id, ext = os.path.splitext(f)
+    file_id = file_id.split('/')[1]
     if(ext == ".cif"):
         with open(os.path.join(args.data_dir, f), "r") as fp:
             mmcif_string = fp.read()
@@ -80,9 +81,13 @@ def main(args):
             for chain_id in chain_ids:
                 chain_id = chain_id.upper()
                 chain_cluster_size_dict[chain_id] = cluster_len
-   
+    
     accepted_exts = [".cif", ".pdb"]
-    files = list(os.listdir(args.data_dir))
+    
+    dirs = [f for f in os.listdir(args.data_dir)]
+    files = [[os.path.join(di, f) for f in os.listdir(os.path.join(args.data_dir, di))] for di in dirs]
+    files = sum(files, [])
+    #files = list(os.listdir(args.data_dir))
     files = [f for f in files if os.path.splitext(f)[-1] in accepted_exts]
     fn = partial(
         parse_file, 

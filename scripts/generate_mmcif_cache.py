@@ -38,7 +38,9 @@ def parse_file(f, args):
 
 
 def main(args):
-    files = [f for f in os.listdir(args.mmcif_dir) if ".cif" in f]
+    dirs = [f for f in os.listdir(args.mmcif_dir)]
+    files = [[os.path.join(di, f) for f in os.listdir(os.path.join(args.mmcif_dir, di))] for di in dirs]
+    files = sum(files, [])
     fn = partial(parse_file, args=args)
     data = {}
     with Pool(processes=args.no_workers) as p:

@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import pickle
+import time
 from typing import Optional, Sequence, List, Any
 
 import ml_collections as mlc
@@ -82,6 +83,8 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
                 mode:
                     "train", "val", or "predict"
         """
+        # print('__init__', os.getpid(), len(os.sched_getaffinity(0)))
+        # self.affinity = os.sched_getaffinity(0)
         super(OpenFoldSingleDataset, self).__init__()
         self.data_dir = data_dir
 
@@ -115,7 +118,7 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
             self._chain_ids = list(alignment_index.keys())
         else:
             self._chain_ids = list(os.listdir(alignment_dir))
-
+        
         if(filter_path is not None):
             with open(filter_path, "r") as f:
                 chains_to_include = set([l.strip() for l in f.readlines()])
@@ -169,12 +172,18 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
             self.feature_pipeline = feature_pipeline.FeaturePipeline(config) 
 
     def _parse_mmcif(self, path, file_id, chain_id, alignment_dir, alignment_index):
+        
         with open(path, 'r') as f:
+            # start = time.time()
             mmcif_string = f.read()
+            # print('Reading', path, time.time()-start)
 
+        start = time.time()
         mmcif_object = mmcif_parsing.parse(
             file_id=file_id, mmcif_string=mmcif_string
         )
+        # print('Parsing', path, time.time()-start)
+
 
         # Crash if an error is encountered. Any parsing errors should have
         # been dealt with at the alignment stage.
@@ -182,13 +191,15 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
             raise list(mmcif_object.errors.values())[0]
 
         mmcif_object = mmcif_object.mmcif_object
-
+        
+        start = time.time()
         data = self.data_pipeline.process_mmcif(
             mmcif=mmcif_object,
             alignment_dir=alignment_dir,
             chain_id=chain_id,
             alignment_index=alignment_index
         )
+        # print('Processing', time.time() - start)
 
         return data
 
@@ -199,6 +210,11 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
         return self._chain_ids[idx]
 
     def __getitem__(self, idx):
+        # print(time.time(), 'ENTERING OpenFoldSingleDataset')
+        # os.sched_setaffinity(0, self.affinity)
+        # print('__getitem__', os.getpid(), len(os.sched_getaffinity(0)))
+        
+        
         name = self.idx_to_chain_id(idx)
         alignment_dir = os.path.join(self.alignment_dir, name)
 
@@ -206,7 +222,7 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
         if(self.alignment_index is not None):
             alignment_dir = self.alignment_dir
             alignment_index = self.alignment_index[name]
-
+        
         if(self.mode == 'train' or self.mode == 'eval'):
             spl = name.rsplit('_', 1)
             if(len(spl) == 2):
@@ -214,8 +230,8 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
             else:
                 file_id, = spl
                 chain_id = None
-
-            path = os.path.join(self.data_dir, file_id)
+            
+            path = os.path.join(self.data_dir, os.path.join(file_id[1:3], file_id))
             structure_index_entry = None
             if(self._structure_index is not None):
                 structure_index_entry = self._structure_index[name]
@@ -231,12 +247,15 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
 
                 if(ext is None):
                     raise ValueError("Invalid file type")
-
+            
             path += ext
+            assert ext == ".cif"
             if(ext == ".cif"):
                 data = self._parse_mmcif(
                     path, file_id, chain_id, alignment_dir, alignment_index,
                 )
+                # return np.zeros((10, 10))
+            
             elif(ext == ".core"):
                 data = self.data_pipeline.process_core(
                     path, alignment_dir, alignment_index,
@@ -262,19 +281,23 @@ class OpenFoldSingleDataset(torch.utils.data.Dataset):
                 alignment_dir=alignment_dir,
                 alignment_index=alignment_index,
             )
-
+        
+       
+        
         if(self._output_raw):
             return data
-
+        # print(time.time(), 'CALLING FeaturePipeline')
         feats = self.feature_pipeline.process_features(
             data, self.mode 
         )
+        # print(time.time(), 'DONE CALLING FeaturePipeline')
 
         feats["batch_idx"] = torch.tensor(
             [idx for _ in range(feats["aatype"].shape[-1])],
             dtype=torch.int64,
             device=feats["aatype"].device)
 
+        # print(time.time(), 'EXITING OpenFoldSingleDataset')
         return feats
 
     def __len__(self):

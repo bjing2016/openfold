@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import os
-import datetime
+import datetime, time
 from multiprocessing import cpu_count
 from typing import Mapping, Optional, Sequence, Any
 
@@ -56,13 +56,17 @@ def make_template_features(
             query_release_date=query_release_date,
             hits=hits_cat,
         )
+        import pdb
+        pdb.set_trace()
+        
+        
         template_features = templates_result.features
 
         # The template featurizer doesn't format empty template features
         # properly. This is a quick fix.
         if(template_features["template_aatype"].shape[0] == 0):
             template_features = empty_template_feats(len(input_sequence))
-
+        
     return template_features
 
 
@@ -497,6 +501,7 @@ class DataPipeline:
         template_featurizer: Optional[templates.TemplateHitFeaturizer],
     ):
         self.template_featurizer = template_featurizer
+        self.template_featurizer = None
 
     def _parse_msa_data(
         self,
@@ -532,9 +537,17 @@ class DataPipeline:
             
             fp.close()
         else: 
+            '''
             for f in os.listdir(alignment_dir):
                 path = os.path.join(alignment_dir, f)
-                ext = os.path.splitext(f)[-1]
+            '''
+            dirs = [f for f in os.listdir(alignment_dir)]
+            paths = [[os.path.join(di, f) for f in os.listdir(os.path.join(alignment_dir, di))] for di in dirs]
+            paths = sum(paths, [])
+            
+            for f in paths:
+                path = os.path.join(alignment_dir, f)
+                ext = os.path.splitext(path)[-1]
 
                 if(ext == ".a3m"):
                     with open(path, "r") as fp:
@@ -550,7 +563,6 @@ class DataPipeline:
                     continue
                 
                 msa_data[f] = data
-
         return msa_data
 
     def _parse_template_hits(
@@ -575,6 +587,7 @@ class DataPipeline:
 
             fp.close()
         else:
+            '''
             for f in os.listdir(alignment_dir):
                 path = os.path.join(alignment_dir, f)
                 ext = os.path.splitext(f)[-1]
@@ -583,7 +596,13 @@ class DataPipeline:
                     with open(path, "r") as fp:
                         hits = parsers.parse_hhr(fp.read())
                     all_hits[f] = hits
-
+            '''
+            path = os.path.join(alignment_dir, 'hhr/pdb70_hits.hhr')
+            if os.path.exists(path):
+                with open(path, "r") as fp:
+                    hits = parsers.parse_hhr(fp.read())
+                all_hits['hhr/pdb70_hits.hhr'] = hits
+                
         return all_hits
 
     def _get_msas(self,
@@ -679,6 +698,7 @@ class DataPipeline:
             If chain_id is None, it is assumed that there is only one chain
             in the object. Otherwise, a ValueError is thrown.
         """
+
         if chain_id is None:
             chains = mmcif.structure.get_chains()
             chain = next(chains, None)
@@ -690,15 +710,17 @@ class DataPipeline:
 
         input_sequence = mmcif.chain_to_seqres[chain_id]
         hits = self._parse_template_hits(alignment_dir, alignment_index)
+        # print(time.time(), 'CALLING make_template_features')
         template_features = make_template_features(
             input_sequence,
             hits,
             self.template_featurizer,
             query_release_date=to_date(mmcif.header["release_date"])
         )
+        # print(time.time(), 'DONE make_template_features')
         
         msa_features = self._process_msa_feats(alignment_dir, input_sequence, alignment_index)
-
+        # print(time.time(), 'EXITING DataPipeline.process_mmcif')
         return {**mmcif_feats, **template_features, **msa_features}
 
     def process_pdb(

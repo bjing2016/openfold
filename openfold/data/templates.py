@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -116,6 +117,7 @@ def _is_after_cutoff(
     Returns:
         True if the template release date is after the cutoff, False otherwise.
     """
+    
     pdb_id_upper = pdb_id.upper()
     if release_date_cutoff is None:
         raise ValueError("The release_date_cutoff must not be None.")
@@ -193,7 +195,7 @@ def _parse_release_dates(path: str) -> Mapping[str, datetime.datetime]:
         data = json.load(fp)
 
     return {
-        pdb.upper(): to_date(v)
+        pdb.upper().split('/')[1]: to_date(v)
         for pdb, d in data.items()
         for k, v in d.items()
         if k == "release_date"
@@ -840,7 +842,7 @@ def _process_single_hit(
     # remove gaps (which regardless have a missing confidence score).
     template_sequence = hit.hit_sequence.replace("-", "")
 
-    cif_path = os.path.join(mmcif_dir, hit_pdb_code + ".cif")
+    cif_path = os.path.join(mmcif_dir, hit_pdb_code[1:3], hit_pdb_code + ".cif")
     logging.info(
         "Reading PDB entry from %s. Query: %s, template: %s",
         cif_path,
@@ -1024,7 +1026,7 @@ class TemplateHitFeaturizer:
                 * Any feature computation errors.
         """
         self._mmcif_dir = mmcif_dir
-        if not glob.glob(os.path.join(self._mmcif_dir, "*.cif")):
+        if not glob.glob(os.path.join(self._mmcif_dir, "*/*.cif")):
             logging.error("Could not find CIFs in %s", self._mmcif_dir)
             raise ValueError(f"Could not find CIFs in {self._mmcif_dir}")
 
@@ -1068,7 +1070,7 @@ class TemplateHitFeaturizer:
     ) -> TemplateSearchResult:
         """Computes the templates for given query sequence (more details above)."""
         logging.info("Searching for template for: %s", query_pdb_code)
-
+        # print(time.time(), 'START PROCESSING TEMPLATES')
         template_features = {}
         for template_feature_name in TEMPLATE_FEATURES:
             template_features[template_feature_name] = []
@@ -1118,6 +1120,10 @@ class TemplateHitFeaturizer:
             idx[:stk] = np.random.permutation(idx[:stk])
 
         for i in idx:
+
+
+            # start = time.time()
+            
             # We got all the templates we wanted, stop processing hits.
             if num_hits >= self.max_hits:
                 break
@@ -1157,7 +1163,8 @@ class TemplateHitFeaturizer:
                 num_hits += 1
                 for k in template_features:
                     template_features[k].append(result.features[k])
-
+            # print('Processed hit in', time.time() - start, 'seconds')
+            
         for name in template_features:
             if num_hits > 0:
                 template_features[name] = np.stack(
@@ -1168,7 +1175,7 @@ class TemplateHitFeaturizer:
                 template_features[name] = np.array(
                     [], dtype=TEMPLATE_FEATURES[name]
                 )
-
+        # print(time.time(), 'DONE PROCESSING TEMPLATES')
         return TemplateSearchResult(
             features=template_features, errors=errors, warnings=warnings
         )

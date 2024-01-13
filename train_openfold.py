@@ -1,6 +1,10 @@
 import argparse
 import logging
 import os
+logging.basicConfig(
+    level=os.environ.get('LOGLEVEL', 'INFO').upper()
+)
+import tqdm
 import random
 import sys
 import time
@@ -93,8 +97,13 @@ class OpenFoldWrapper(pl.LightningModule):
                 v, 
                 on_step=False, on_epoch=True, logger=True
             )
-
+    def on_batch_start(self):
+        print(time.time(), 'BATCH START')
+    def on_batch_end(self):
+        print(time.time(), 'BATCH END')
+        
     def training_step(self, batch, batch_idx):
+        print(time.time(), 'START TRAINING STEP')
         if(self.ema.device != batch["aatype"].device):
             self.ema.to(batch["aatype"].device)
 
@@ -106,8 +115,10 @@ class OpenFoldWrapper(pl.LightningModule):
 
         # Compute loss
         loss, loss_breakdown = self.loss(
-            outputs, batch, _return_breakdown=True
+            output, batch, _return_breakdown=True
         )
+
+        
 
         # Log it
         self._log(loss_breakdown, batch, outputs)
@@ -257,6 +268,7 @@ class OpenFoldWrapper(pl.LightningModule):
 
 
 def main(args):
+
     if(args.seed is not None):
         seed_everything(args.seed) 
 
@@ -297,7 +309,7 @@ def main(args):
         batch_seed=args.seed,
         **vars(args)
     )
-
+    
     data_module.prepare_data()
     data_module.setup()
     
@@ -374,7 +386,16 @@ def main(args):
         ckpt_path = None
     else:
         ckpt_path = args.resume_from_ckpt
-
+    '''
+    data_module.setup()
+    loader = data_module._gen_dataloader('train')
+    
+    dataset = loader.dataset.datasets[0]
+    loader = torch.utils.data.DataLoader(dataset, num_workers=16, batch_size=1, shuffle=False)
+    for data in tqdm.tqdm(loader):
+        pass
+    exit()
+    '''
     trainer.fit(
         model_module, 
         datamodule=data_module,

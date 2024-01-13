@@ -1,3 +1,12 @@
+.ipynb_checkpoints
+flash-attention
+*.json
+*.pt
+*.out
+*.txt
+mmcif_dir
+*.sh
+mmcif_cache.json
 .vscode/
 __pycache__/
 *.egg-info
